@@ -4,6 +4,7 @@
 #include <string.h>
 #include <omp.h>
 #include <sys/resource.h>
+#include <vector>
 
 #define M 512
 #define B 16
@@ -73,6 +74,8 @@ void run()
         // printf("THRD[%d]: %d\n", omp_get_thread_num(), kk);
         for (jj = 0; jj < en; jj += B)
         {
+
+
             for (i = 0; i < M; i++)
             {
 #pragma omp simd
