@@ -104,11 +104,13 @@ void run()
         memset(result, 0, sizeof(result));
         for(j = 0; j<colPtr.size()-1 ; j++)
         {
-            #pragma omp parallel for reduction(+: result[j])            
+            float sum = result[j];
+            #pragma omp parallel reduction(+: sum)            
             for(k = colPtr[j]; k<colPtr[j+1]; k++)
             {
-                result[j] += v[k] * a[i][row[k]];
+                sum += v[k] * a[i][row[k]];
             }
+            result[j] = sum;
         }
         for(j = 0; j<M ; j++)
         {
