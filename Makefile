@@ -1,4 +1,4 @@
 all:
-	gcc -g -fopenmp M-M.c -o dense.o;
-	gcc -g -fopenmp M-M-sparse.c -o sparse.o;
+	gcc -fopenmp -mmmx -msse -msse2 -mfpmath=sse M-M.c -o dense.o;
+	gcc -fopenmp -mmmx -msse -msse2 -mfpmath=sse M-M-sparse.c -o sparse.o;
 
