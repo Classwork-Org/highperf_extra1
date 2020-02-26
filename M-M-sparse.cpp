@@ -7,9 +7,11 @@
 #include <vector>
 
 #define M 512
-#define B 16
-#define THR 32
+#define B 32
+#define THR 16
 #define CSR_FLUSH_TO_ZERO (1 << 15)
+
+using std::vector;
 
 double CLOCK()
 {
@@ -18,13 +20,26 @@ double CLOCK()
     return (t.tv_sec * 1000) + (t.tv_nsec * 1e-6);
 }
 
+void print_matrix(float arr[M][M], int iref, int jref, int sM, int sN)
+{
+    int i, j;
+    for(i = iref; i< iref + sM; i++)
+    {
+        for(j = jref; j<jref + sN; j++)
+        {
+            printf("%.02f ", arr[i][j]);
+        }
+        printf("\n");
+    }
+}
+
 void run()
 {
     int i, j, k, ii, jj, kk, en;
     double start, finish, total;
     float a[M][M] __attribute__((aligned(16)));
     float b[M][M] __attribute__((aligned(16)));
-    float c[THR][M][M] __attribute__((aligned(16)));
+    float c[M][M] __attribute__((aligned(16)));
 
     omp_set_num_threads(THR);
 
@@ -45,82 +60,59 @@ void run()
         for (j = 0; j < M; j++)
             b[i][j] = (i / 3) + (j / 5);
 
-    for (kk = 0; k < THR; k++)
+
+    for (i = 0; i < M; i++)
     {
-        for (i = 0; i < M; i++)
+        for (j = 0; j < M; j++)
         {
-            for (j = 0; j < M; j++)
-            {
-                c[kk][i][j] = 0.;
-            }
+            c[i][j] = 0.;
         }
     }
 
     /* Start timing */
-    en = M;
     start = CLOCK();
 
     int tid;
-    float sum[B];
+    float result[M];
 
     unsigned csr = __builtin_ia32_stmxcsr();
     csr |= CSR_FLUSH_TO_ZERO;
     __builtin_ia32_ldmxcsr(csr);
 
-#pragma omp parallel for schedule(static, 1) private(tid, kk, jj, i, j, k, sum) shared(a, b, c)
-    for (kk = 0; kk < en; kk += B)
+    vector<float> v;
+    vector<int> colPtr, row;
+    int nz = 0;
+    colPtr.push_back(nz);
+    for (j = 0; j < M; j++)
     {
-        tid = omp_get_thread_num();
-        // printf("THRD[%d]: %d\n", omp_get_thread_num(), kk);
-        for (jj = 0; jj < en; jj += B)
+        nz = 0;
+        for (k = 0; k < M; k++)
         {
-
-
-            for (i = 0; i < M; i++)
+            if(b[k][j] != 0.)
             {
-#pragma omp simd
-                for (j = jj; j < jj + B; j++)
-                {
-                    sum[j - jj] = c[tid][i][j];
-                }
-
-                for (k = kk; k < kk + B; k++)
-                {
-                    register float t = a[i][k];
-                    if (a[i][k] != 0)
-                    {
-#pragma omp simd
-                        for (j = jj; j < jj + B; j++)
-                        {
-                            sum[j - jj] += t * b[k][j];
-                        }
-                    }
-                }
-
-#pragma omp simd
-                for (j = jj; j < jj + B; j++)
-                {
-                    c[tid][i][j] = sum[j - jj];
-                }
+                nz++;
+                v.push_back(b[k][j]);
+                row.push_back(k-kk);
             }
         }
+        colPtr.push_back(colPtr.at(colPtr.size()-1)+nz);
     }
 
-#pragma omp parallel for schedule(static, 1) private(tid, kk, jj, i, j, k, sum)
-    for (kk = 0; kk < en; kk += B)
+    #pragma omp parallel for private(i, j, k, result) shared(a, b, c, colPtr, v, row)
+    for(i = 0; i<M; i++)
     {
-        for (jj = 0; jj < en; jj += B)
+        memset(result, 0, sizeof(result));
+        for(j = 0; j<colPtr.size()-1 ; j++)
         {
-            for (k = 1; k < THR; k++)
+            #pragma omp parallel for reduction(+: result[j])            
+            for(k = colPtr[j]; k<colPtr[j+1]; k++)
             {
-                for (i = kk; i < kk + B; i++)
-                {
-                    for (j = jj; j < jj + B; j++)
-                    {
-                        c[0][i][j] += c[k][i][j];
-                    }
-                }
+                result[j] += v[k] * a[i][row[k]];
             }
+        }
+        for(j = 0; j<M ; j++)
+        {
+            c[i][j] = result[j];
         }
     }
 
@@ -128,17 +120,17 @@ void run()
     /* End timing */
     total = finish - start;
     printf("Time for the loop = %f\n", total);
-    printf("The value of c[%d][%d] = %4.2f\n", 0, 0, c[0][0][0]);
-    printf("The value of c[%d][%d] = %4.2f\n", 31, 32, c[0][31][32]);
-    printf("The value of c[%d][%d] = %4.2f\n", 510, 0, c[0][510][0]);
-    printf("The value of c[%d][%d] = %4.2f\n", 511, 511, c[0][511][511]);
+    printf("The value of c[%d][%d] = %4.2f\n", 0, 0, c[0][0]);
+    printf("The value of c[%d][%d] = %4.2f\n", 31, 32, c[31][32]);
+    printf("The value of c[%d][%d] = %4.2f\n", 510, 0, c[510][0]);
+    printf("The value of c[%d][%d] = %4.2f\n", 511, 511, c[511][511]);
     printf("Actual\n");
 
     for (i = 0; i < M; i++)
     {
         for (j = 0; j < M; j++)
         {
-            c[0][i][j] = 0.;
+            c[i][j] = 0.;
         }
     }
 
@@ -149,7 +141,7 @@ void run()
         {
             for (k = 0; k < M; k++)
             {
-                c[0][i][j] += a[i][k] * b[k][j];
+                c[i][j] += a[i][k] * b[k][j];
             }
         }
     }
@@ -157,10 +149,10 @@ void run()
     total = finish - start;
     printf("Time for naive loop = %f\n", total);
 
-    printf("The value of c[%d][%d] = %4.2f\n", 0, 0, c[0][0][0]);
-    printf("The value of c[%d][%d] = %4.2f\n", 31, 32, c[0][31][32]);
-    printf("The value of c[%d][%d] = %4.2f\n", 510, 0, c[0][510][0]);
-    printf("The value of c[%d][%d] = %4.2f\n", 511, 511, c[0][511][511]);
+    printf("The value of c[%d][%d] = %4.2f\n", 0, 0, c[0][0]);
+    printf("The value of c[%d][%d] = %4.2f\n", 31, 32, c[31][32]);
+    printf("The value of c[%d][%d] = %4.2f\n", 510, 0, c[510][0]);
+    printf("The value of c[%d][%d] = %4.2f\n", 511, 511, c[511][511]);
 }
 
 int main(int argc, char **argv)

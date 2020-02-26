@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/dense.o",
+            "program": "${workspaceFolder}/sparse.o",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
